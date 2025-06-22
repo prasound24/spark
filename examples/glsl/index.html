@@ -39,6 +39,7 @@
     void mainObjectModifier(inout Gsplat splat, float time) {
       float r = length(splat.center);
       splat.center *= 1.0 + 0.1*sin(r*PI*2.0 + time);
+      splat.rgba.a *= 0.5; // reducing opacity makes the scene brighter
     }
   </script>
 
@@ -55,6 +56,9 @@
   <script type="module">
     import * as THREE from "three";
     import Stats from 'three/addons/libs/stats.module.js';
+    import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+    import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+    import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
     import { OrbitControls } from "three/addons/controls/OrbitControls.js";
     import { SparkRenderer, SplatMesh, dyno } from "@sparkjsdev/spark";
     import { getAssetFileURL } from "/examples/js/get-asset-url.js";
@@ -131,6 +135,41 @@
     // Make sure to update the generator after updating modifiers
     butterfly.updateGenerator();
 
+    const composer = new EffectComposer(renderer);
+    const shaderPass = new ShaderPass({
+      uniforms: {
+        tDiffuse: { value: null },
+        amount: { value: 1.0 },
+      },
+      vertexShader: `
+        out vec2 vUv;
+
+        void main() {
+          vUv = uv;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4( position, 1.0 );
+        }`,
+      fragmentShader: `
+        uniform float amount;
+        uniform sampler2D tDiffuse;
+        in vec2 vUv;
+
+        float vignette() {
+            vec2 uv = vUv;
+            uv.xy *= 1. - uv.yx;
+            float v = uv.x * uv.y * 15.0;
+            return pow(v, 0.125);
+        }
+
+        void main() {
+          vec4 o = texture(tDiffuse, vUv);
+          o = tanh(o*o);
+          o.rgb *= vignette();
+          gl_FragColor = o;
+        }`,
+    });
+    composer.addPass(new RenderPass(scene, camera));
+    composer.addPass(shaderPass);
+
     //const controls = new SparkControls({ canvas: renderer.domElement });
     const controls = new OrbitControls(camera, renderer.domElement);
     //controls.enabled = false;
@@ -148,7 +187,8 @@
       butterfly.updateVersion();
       controls.update();
       stats.update();
-      renderer.render(scene, camera);
+      //renderer.render(scene, camera);
+      composer.render();
     });
 
     editor.dom.addEventListener('focusout', (e) => {
