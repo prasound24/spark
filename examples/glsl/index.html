@@ -9,9 +9,11 @@
     body {
       margin: 0;
     }
+
     canvas {
       touch-action: none;
     }
+
     #codemirror {
       position: fixed;
       width: 100%;
@@ -36,7 +38,7 @@
     //const uint GSPLAT_FLAG_ACTIVE = 1u << 0u;
     void mainObjectModifier(inout Gsplat splat, float time) {
       float r = length(splat.center);
-      splat.center *= 0.9 + 0.1 * sin(r * 15.0 + time * 3.0);
+      splat.center *= 1.0 + 0.1*sin(r*PI*2.0 + time);
     }
   </script>
 
@@ -44,6 +46,7 @@
     {
       "imports": {
         "three": "/examples/js/vendor/three/build/three.module.js",
+        "three/addons/": "/examples/js/vendor/three/examples/jsm/",
         "@sparkjsdev/spark": "/dist/spark.module.js"
       }
     }
@@ -51,7 +54,9 @@
 
   <script type="module">
     import * as THREE from "three";
-    import { SparkControls, SplatMesh, dyno } from "@sparkjsdev/spark";
+    import Stats from 'three/addons/libs/stats.module.js';
+    import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+    import { SparkRenderer, SplatMesh, dyno } from "@sparkjsdev/spark";
     import { getAssetFileURL } from "/examples/js/get-asset-url.js";
 
     import { basicSetup } from "codemirror";
@@ -65,15 +70,19 @@
     });
 
     const scene = new THREE.Scene();
-    const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+    const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.001, 1000);
+    camera.position.set(1, 1, 1);
     const renderer = new THREE.WebGLRenderer();
     renderer.setSize(window.innerWidth, window.innerHeight);
-    document.body.appendChild(renderer.domElement)
+    document.body.appendChild(renderer.domElement);
 
-    const splatURL = await getAssetFileURL("butterfly.spz");
+    const spark = new SparkRenderer({ renderer, maxStdDev: 3.5 });
+    scene.add(spark);
+
+    const splatURL = await getAssetFileURL("soundform.spz");
     const butterfly = new SplatMesh({ url: splatURL });
-    butterfly.quaternion.set(1, 0, 0, 0);
-    butterfly.position.set(0, 0, -1.5);
+    //butterfly.quaternion.set(1, 0, 0, 0);
+    //butterfly.position.set(0, 0, -1.5);
     scene.add(butterfly);
 
     // Inject GLSL color shader into world-space SplatMesh modifier
@@ -81,17 +90,13 @@
       inTypes: { gsplat: dyno.Gsplat },
       outTypes: { gsplat: dyno.Gsplat },
       globals: () => [dyno.unindent(`
-        vec3 waveRgb(vec3 pos) {
-          return vec3(
-            0.6 + 0.4 * sin(pos.x * 56.0),
-            0.6 + 0.4 * sin(pos.y * 78.0),
-            0.6 + 0.4 * cos(pos.z * 90.0)
-          );
+        void mainWorldModifier(inout Gsplat splat) {
+          splat.rgba.rgb *= 1.0 + 0.1*cos(splat.center*PI*2.0);
         }
       `)],
       statements: ({ inputs, outputs }) => dyno.unindentLines(`
         ${outputs.gsplat} = ${inputs.gsplat};
-        ${outputs.gsplat}.rgba.rgb *= waveRgb(${inputs.gsplat}.center);
+        mainWorldModifier(${outputs.gsplat});
       `),
     });
 
@@ -126,12 +131,23 @@
     // Make sure to update the generator after updating modifiers
     butterfly.updateGenerator();
 
-    const controls = new SparkControls({ canvas: renderer.domElement });
+    //const controls = new SparkControls({ canvas: renderer.domElement });
+    const controls = new OrbitControls(camera, renderer.domElement);
+    //controls.enabled = false;
+    //controls.target.set(0, 0, 0);
+    controls.minDistance = 0;
+    controls.maxDistance = 10;
+
+    const stats = new Stats();
+    stats.domElement.style.position = 'absolute';
+    stats.domElement.style.top = '0';
+    document.body.appendChild(stats.domElement);
+
     renderer.setAnimationLoop(function animate(time) {
       animateT.value = time / 1000;
       butterfly.updateVersion();
-
-      controls.update(camera);
+      controls.update();
+      stats.update();
       renderer.render(scene, camera);
     });
 

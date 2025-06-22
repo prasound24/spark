@@ -7,6 +7,10 @@
     "url": "https://sparkjs.dev/assets/splats/forge.spz",
     "directory": "splats"
   },
+  "soundform.spz": {
+    "url": "https://sparkjs.dev/assets/splats/soundform.spz",
+    "directory": "splats"
+  },
   "butterfly-wings-closed.spz": {
     "url": "https://sparkjs.dev/assets/splats/butterfly-wings-closed.spz",
     "directory": "splats"
