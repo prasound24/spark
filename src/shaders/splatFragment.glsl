@@ -21,15 +21,21 @@ void main() {
         discard;
     }
 
-    float alpha = vRgba.a;
-    alpha *= mix(1.0, exp(-0.5 * z), falloff);
-    if (alpha < MIN_ALPHA) {
-        discard;
-    }
+    vec3 rgb = vRgba.rgb; // splat brightness
+    float opacity = vRgba.a; // splat opacity
+    float density = mix(1.0, exp(-0.5 * z), falloff);
 
-    vec3 rgb = vRgba.rgb;
-    if (encodeLinear) {
-        rgb = srgbToLinear(rgb);
-    }
-    fragColor = vec4(rgb, alpha);
+    // Tone mapping should be done at the very end.
+    //if (encodeLinear) {
+    //    rgb = srgbToLinear(rgb);
+    //}
+
+    // WebGL can do this check.
+    //if (density*max3(rgb) < MIN_ALPHA) {
+    //    discard;
+    //}
+
+    // Desired blending function:
+    //  output.rgb = splat.rgb*density + background.rgb*(1.0 - opacity*density)
+    fragColor = vec4(rgb*density, opacity*density);
 }

@@ -22,8 +22,12 @@ const float INFINITY = 1.0 / 0.0;
 const float NEG_INFINITY = -INFINITY;
 
 const float MAX_PIXEL_RADIUS = 512.0;
-const float MIN_ALPHA = 0.5 * (1.0 / 255.0); // 0.00196
+const float MIN_ALPHA = 0.5 * (1.0 / 255.0); // 0.00196, min brightness
 const float MAX_STDDEV = sqrt(8.0);
+
+float max3(vec3 v) {
+    return max(v.x, max(v.y, v.z));
+}
 
 float sqr(float x) {
     return x * x;

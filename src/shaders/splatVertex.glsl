@@ -51,7 +51,9 @@ void main() {
     vec4 quaternion, rgba;
     unpackSplat(packed, center, scales, quaternion, rgba);
 
-    if (rgba.a < MIN_ALPHA) {
+    // .rgb = brightness, .a = opacity
+    // plasma is very bright, but almost transparent
+    if (max3(rgba.rgb) < MIN_ALPHA) {
         return;
     }
     bvec3 zeroScales = equal(scales, vec3(0.0));
@@ -156,8 +158,8 @@ void main() {
 
     // Compute anti-aliasing intensity scaling factor
     float blurAdjust = sqrt(max(0.0, detOrig / det));
-    rgba.a *= blurAdjust;
-    if (rgba.a < MIN_ALPHA) {
+    rgba.rgb *= blurAdjust;
+    if (max3(rgba.rgb) < MIN_ALPHA) {
         return;
     }
 
