@@ -33,4 +33,4 @@ export const SPLAT_TEX_DEPTH_MASK = SPLAT_TEX_DEPTH - 1;
 // Enable/disable Gsplat sorting via Rust WASM code. In testing the sorting
 // time between pure JS and WASM are minimal and don't make a big difference.
 
-export const WASM_SPLAT_SORT = true;
+export const WASM_SPLAT_SORT = false;

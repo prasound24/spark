@@ -39,7 +39,7 @@
     void mainObjectModifier(inout Gsplat splat, float time) {
       float r = length(splat.center);
       splat.center *= 1.0 + 0.1*sin(r*PI*2.0 + time);
-      splat.rgba.a *= 0.5; // reducing opacity makes the scene brighter
+      splat.rgba.a *= 1.0; // reducing opacity makes the scene brighter
     }
   </script>
 
@@ -163,6 +163,7 @@
         void main() {
           vec4 o = texture(tDiffuse, vUv);
           o = tanh(o*o);
+          o.a = 1.0;
           o.rgb *= vignette();
           gl_FragColor = o;
         }`,
