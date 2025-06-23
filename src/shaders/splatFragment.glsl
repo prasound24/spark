@@ -22,7 +22,9 @@ void main() {
     }
 
     float alpha = vRgba.a;
-    alpha *= mix(1.0, exp(-0.5 * z), falloff);
+    float density = mix(1.0, exp(-0.5 * z), falloff);
+    alpha *= density;
+
     if (alpha < MIN_ALPHA) {
         discard;
     }
@@ -31,5 +33,5 @@ void main() {
     if (encodeLinear) {
         rgb = srgbToLinear(rgb);
     }
-    fragColor = vec4(rgb, alpha);
+    fragColor = vec4(rgb*density, alpha);
 }
