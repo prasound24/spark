@@ -26,19 +26,10 @@
   <div id="codemirror"></div>
 
   <script id="glsl" type="x-shader/x-fragment">
-    // A Gsplat type is defined in GLSL in src/dyno/splats.ts as follows:
-    // struct Gsplat {
-    //   vec3 center;
-    //   uint flags;
-    //   vec3 scales;
-    //   int index;
-    //   vec4 quaternion;
-    //   vec4 rgba;
-    // };
-    //const uint GSPLAT_FLAG_ACTIVE = 1u << 0u;
     void mainObjectModifier(inout Gsplat splat, float time) {
       float r = length(splat.center);
       splat.center *= 1.0 + 0.1*sin(r*PI*2.0 + time);
+      splat.rgba = vec4(1.0, 0.5, 0.2, 0.0);
     }
   </script>
 
@@ -85,21 +76,6 @@
     //butterfly.position.set(0, 0, -1.5);
     scene.add(butterfly);
 
-    // Inject GLSL color shader into world-space SplatMesh modifier
-    butterfly.worldModifier = new dyno.Dyno({
-      inTypes: { gsplat: dyno.Gsplat },
-      outTypes: { gsplat: dyno.Gsplat },
-      globals: () => [dyno.unindent(`
-        void mainWorldModifier(inout Gsplat splat) {
-          splat.rgba.rgb *= 1.0 + 0.1*cos(splat.center*PI*2.0);
-        }
-      `)],
-      statements: ({ inputs, outputs }) => dyno.unindentLines(`
-        ${outputs.gsplat} = ${inputs.gsplat};
-        mainWorldModifier(${outputs.gsplat});
-      `),
-    });
-
     // Inject DynoBlock with embedded GLSL shader that uses an external
     // uniform value animateT to control motion. Any GLSL statements can only
     // uses references provided in inputs + outputs, so we create a DynoBlock
@@ -143,12 +119,50 @@
     stats.domElement.style.top = '0';
     document.body.appendChild(stats.domElement);
 
+    import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+    import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+    import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+    const composer = new EffectComposer(renderer);
+    const shaderPass = new ShaderPass({
+      uniforms: {
+        tDiffuse: { value: null },
+        amount: { value: 1.0 },
+      },
+      vertexShader: `
+        out vec2 vUv;
+
+        void main() {
+          vUv = uv;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4( position, 1.0 );
+        }`,
+      fragmentShader: `
+        uniform float amount;
+        uniform sampler2D tDiffuse;
+        in vec2 vUv;
+
+        float vignette() {
+            vec2 uv = vUv;
+            uv.xy *= 1. - uv.yx;
+            float v = uv.x * uv.y * 15.0;
+            return pow(v, 0.125);
+        }
+
+        void main() {
+          vec4 o = texture(tDiffuse, vUv);
+          gl_FragColor = tanh(o/50.0)*vignette();
+          gl_FragColor.a = 1.0;
+        }`,
+    });
+    composer.addPass(new RenderPass(scene, camera));
+    composer.addPass(shaderPass);
+
     renderer.setAnimationLoop(function animate(time) {
       animateT.value = time / 1000;
       butterfly.updateVersion();
       controls.update();
       stats.update();
-      renderer.render(scene, camera);
+      //renderer.render(scene, camera);
+      composer.render();
     });
 
     editor.dom.addEventListener('focusout', (e) => {
