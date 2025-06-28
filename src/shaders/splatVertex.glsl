@@ -51,9 +51,10 @@ void main() {
     vec4 quaternion, rgba;
     unpackSplat(packed, center, scales, quaternion, rgba);
 
-    if (rgba.a < MIN_ALPHA) {
+    if (rgba == vec4(0) || scales == vec3(0)) {
         return;
     }
+    
     bvec3 zeroScales = equal(scales, vec3(0.0));
     if (all(zeroScales)) {
         return;

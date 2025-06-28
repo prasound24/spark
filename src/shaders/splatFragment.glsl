@@ -16,22 +16,7 @@ in vec2 vSplatUv;
 in vec3 vNdc;
 
 void main() {
-    float z = dot(vSplatUv, vSplatUv);
-    if (z > (maxStdDev * maxStdDev)) {
-        discard;
-    }
-
-    float alpha = vRgba.a;
-    float density = mix(1.0, exp(-0.5 * z), falloff);
-    alpha *= density;
-
-    if (alpha < MIN_ALPHA) {
-        discard;
-    }
-
-    vec3 rgb = vRgba.rgb;
-    if (encodeLinear) {
-        rgb = srgbToLinear(rgb);
-    }
-    fragColor = vec4(rgb*density, alpha);
+    float len2 = dot(vSplatUv, vSplatUv);
+    float density = mix(1.0, exp(-0.5 * len2), falloff);
+    fragColor = vRgba*density;
 }
