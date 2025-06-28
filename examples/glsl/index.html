@@ -26,19 +26,8 @@
   <div id="codemirror"></div>
 
   <script id="glsl" type="x-shader/x-fragment">
-    // A Gsplat type is defined in GLSL in src/dyno/splats.ts as follows:
-    // struct Gsplat {
-    //   vec3 center;
-    //   uint flags;
-    //   vec3 scales;
-    //   int index;
-    //   vec4 quaternion;
-    //   vec4 rgba;
-    // };
-    //const uint GSPLAT_FLAG_ACTIVE = 1u << 0u;
     void mainObjectModifier(inout Gsplat splat, float time) {
-      float r = length(splat.center);
-      splat.center *= 1.0 + 0.1*sin(r*PI*2.0 + time);
+      splat.center.xz *= mat2(cos(time*0.1 + vec4(0, 1, -1, 0)*PI*0.5));
     }
   </script>
 
@@ -70,14 +59,18 @@
     });
 
     const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x111111);
+
     const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.001, 1000);
     camera.position.set(1, 1, 1);
+    scene.add(camera);
+
     const renderer = new THREE.WebGLRenderer();
     renderer.setSize(window.innerWidth, window.innerHeight);
     document.body.appendChild(renderer.domElement);
 
     const spark = new SparkRenderer({ renderer, maxStdDev: 3.5 });
-    scene.add(spark);
+    camera.add(spark);
 
     const splatURL = await getAssetFileURL("soundform.spz");
     const butterfly = new SplatMesh({ url: splatURL });
@@ -86,26 +79,35 @@
     scene.add(butterfly);
 
     // Inject GLSL color shader into world-space SplatMesh modifier
-    butterfly.worldModifier = new dyno.Dyno({
-      inTypes: { gsplat: dyno.Gsplat },
-      outTypes: { gsplat: dyno.Gsplat },
-      globals: () => [dyno.unindent(`
-        void mainWorldModifier(inout Gsplat splat) {
-          splat.rgba.rgb *= 1.0 + 0.1*cos(splat.center*PI*2.0);
-        }
-      `)],
-      statements: ({ inputs, outputs }) => dyno.unindentLines(`
-        ${outputs.gsplat} = ${inputs.gsplat};
-        mainWorldModifier(${outputs.gsplat});
-      `),
-    });
+    const animateWM = dyno.dynoMat4x4(camera.matrixWorld);
+    butterfly.worldModifier = dyno.dynoBlock(
+      { gsplat: dyno.Gsplat },
+      { gsplat: dyno.Gsplat },
+      ({ gsplat }) => {
+        const d = new dyno.Dyno({
+          inTypes: { gsplat: dyno.Gsplat, wm: 'mat4' },
+          outTypes: { gsplat: dyno.Gsplat },
+          globals: () => [dyno.unindent(`
+            void mainWorldModifier(inout Gsplat splat, mat4 wm) {
+              vec4 pos = vec4(splat.center, 1);
+              pos = inverse(wm)*pos; // local -> world
+              float dist = -pos.z, fog = 1.0 - exp(-0.1*dist);
+              splat.rgba.rgb = mix(splat.rgba.rgb, vec3(1), fog);
+            }
+          `)],
+          statements: ({ inputs, outputs }) => dyno.unindentLines(`
+            ${outputs.gsplat} = ${inputs.gsplat};
+            mainWorldModifier(${outputs.gsplat}, ${inputs.wm});
+          `),
+        });
+        return d.apply({ gsplat, wm: animateWM });
+      });
 
     // Inject DynoBlock with embedded GLSL shader that uses an external
     // uniform value animateT to control motion. Any GLSL statements can only
     // uses references provided in inputs + outputs, so we create a DynoBlock
     // that allows us to get `t` as an input parameter to our GLSL block.
     const animateT = dyno.dynoFloat(0);
-
     butterfly.objectModifier = dyno.dynoBlock(
       { gsplat: dyno.Gsplat },
       { gsplat: dyno.Gsplat },
@@ -135,6 +137,7 @@
     const controls = new OrbitControls(camera, renderer.domElement);
     //controls.enabled = false;
     //controls.target.set(0, 0, 0);
+    controls.enablePan = false;
     controls.minDistance = 0;
     controls.maxDistance = 10;
 
@@ -142,13 +145,15 @@
     stats.domElement.style.position = 'absolute';
     stats.domElement.style.top = '0';
     document.body.appendChild(stats.domElement);
+    window.camera = camera;
 
     renderer.setAnimationLoop(function animate(time) {
-      animateT.value = time / 1000;
-      butterfly.updateVersion();
       controls.update();
-      stats.update();
+      animateT.value = time / 1000;
+      animateWM.value = camera.matrixWorld;
+      butterfly.updateVersion();
       renderer.render(scene, camera);
+      stats.update();
     });
 
     editor.dom.addEventListener('focusout', (e) => {
