@@ -26,16 +26,6 @@
   <div id="codemirror"></div>
 
   <script id="glsl" type="x-shader/x-fragment">
-    // A Gsplat type is defined in GLSL in src/dyno/splats.ts as follows:
-    // struct Gsplat {
-    //   vec3 center;
-    //   uint flags;
-    //   vec3 scales;
-    //   int index;
-    //   vec4 quaternion;
-    //   vec4 rgba;
-    // };
-    //const uint GSPLAT_FLAG_ACTIVE = 1u << 0u;
     void mainObjectModifier(inout Gsplat splat, float time) {
       float r = length(splat.center);
       splat.center *= 1.0 + 0.1*sin(r*PI*2.0 + time);
@@ -70,9 +60,9 @@
     });
 
     const scene = new THREE.Scene();
-    const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.001, 1000);
+    const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.001, 3);
     camera.position.set(1, 1, 1);
-    const renderer = new THREE.WebGLRenderer();
+    const renderer = new THREE.WebGLRenderer({ preserveDrawingBuffer: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
     document.body.appendChild(renderer.domElement);
 
@@ -84,21 +74,6 @@
     //butterfly.quaternion.set(1, 0, 0, 0);
     //butterfly.position.set(0, 0, -1.5);
     scene.add(butterfly);
-
-    // Inject GLSL color shader into world-space SplatMesh modifier
-    butterfly.worldModifier = new dyno.Dyno({
-      inTypes: { gsplat: dyno.Gsplat },
-      outTypes: { gsplat: dyno.Gsplat },
-      globals: () => [dyno.unindent(`
-        void mainWorldModifier(inout Gsplat splat) {
-          splat.rgba.rgb *= 1.0 + 0.1*cos(splat.center*PI*2.0);
-        }
-      `)],
-      statements: ({ inputs, outputs }) => dyno.unindentLines(`
-        ${outputs.gsplat} = ${inputs.gsplat};
-        mainWorldModifier(${outputs.gsplat});
-      `),
-    });
 
     // Inject DynoBlock with embedded GLSL shader that uses an external
     // uniform value animateT to control motion. Any GLSL statements can only
@@ -137,23 +112,105 @@
     //controls.target.set(0, 0, 0);
     controls.minDistance = 0;
     controls.maxDistance = 10;
+    controls.screenSpacePanning = false;
 
     const stats = new Stats();
     stats.domElement.style.position = 'absolute';
     stats.domElement.style.top = '0';
     document.body.appendChild(stats.domElement);
 
+    const imageRT = new THREE.WebGLRenderTarget(window.innerWidth, window.innerHeight);
+    const depthRT = new THREE.WebGLArrayRenderTarget(window.innerWidth, window.innerHeight);
+    depthRT.depthTexture = new THREE.DepthTexture();
+    depthRT.depthTexture.format = THREE.DepthFormat;
+    depthRT.depthTexture.type = THREE.FloatType;
+
+    const postCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 3);
+    const postMaterial = new THREE.ShaderMaterial({
+      uniforms: {
+        cameraNear: { value: camera.near },
+        cameraFar: { value: camera.far },
+        tDiffuse: { value: imageRT.texture },
+        tDepth: { value: depthRT.depthTexture },
+      },
+      vertexShader: `
+        varying vec2 vUv;
+
+        void main() {
+          vUv = uv;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }`,
+      fragmentShader: `
+        #include <packing>
+
+        varying vec2 vUv;
+        uniform sampler2D tDiffuse;
+        uniform sampler2D tDepth;
+        uniform float cameraNear;
+        uniform float cameraFar;
+
+        float readDepth( sampler2D depthSampler, vec2 coord ) {
+          float fragCoordZ = texture( depthSampler, coord ).x;
+          float viewZ = perspectiveDepthToViewZ( fragCoordZ, cameraNear, cameraFar );
+          return viewZToOrthographicDepth( viewZ, cameraNear, cameraFar );
+        }
+
+        void main() {
+          gl_FragColor = texture( tDiffuse, vUv );
+
+          if (vUv.x > 0.5) {
+            float depth = readDepth( tDepth, vUv );
+            gl_FragColor.rgb = mix(gl_FragColor.rgb, vec3(1), pow(depth, 4.0));
+            
+            if (vUv.y > 0.5)
+              gl_FragColor.rgb = (1.0 - depth) * vec3(1);
+          }
+        }`,
+    });
+    const postPlane = new THREE.PlaneGeometry(2, 2);
+    const postQuad = new THREE.Mesh(postPlane, postMaterial);
+    const postScene = new THREE.Scene();
+    postScene.add(postQuad);
+
+    window.spark = spark;
+
     renderer.setAnimationLoop(function animate(time) {
+      if (!controls.enabled) return;
       animateT.value = time / 1000;
       butterfly.updateVersion();
       controls.update();
       stats.update();
+
+      // render transparent splats as usual
+      renderer.setRenderTarget(imageRT);
+      spark.material.transparent = true;
+      spark.material.depthWrite = false;
+      spark.material.depthTest = true;
+      spark.material.opacity = 1;
       renderer.render(scene, camera);
+
+      // render solid splats for depth buffer
+      // TODO: How to render depth buffer only? RGBA not needed here.
+      renderer.setRenderTarget(depthRT);
+      spark.material.transparent = false;
+      spark.material.depthWrite = true;
+      spark.material.depthTest = true;
+      spark.material.opacity = 0;
+      renderer.render(scene, camera);
+
+      // combine the image with the depth buffer
+      renderer.setRenderTarget(null);
+      renderer.render(postScene, postCamera);
     });
 
     editor.dom.addEventListener('focusout', (e) => {
       console.log('Updating user GLSL...');
       butterfly.updateGenerator();
+    });
+
+    renderer.domElement.addEventListener('dblclick', (e) => {
+      if (e.target == renderer.domElement)
+        controls.enabled = !controls.enabled;
     });
   </script>
 </body>
